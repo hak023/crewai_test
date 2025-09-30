@@ -1,0 +1,12 @@
+# CrewAI 맛집 추천 시스템 환경 변수 설정
+# 이 파일을 .env로 복사하고 실제 API 키를 입력하세요
+
+# OpenAI API 키 (필수)
+OPENAI_API_KEY=your-openai-api-key-here
+
+# Serper API 키 (웹 검색용, 선택사항)
+SERPER_API_KEY=your-serper-api-key-here
+
+# 기타 설정
+OPENAI_MODEL=gpt-3.5-turbo
+TEMPERATURE=0.7

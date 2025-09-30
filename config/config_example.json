@@ -1,0 +1,69 @@
+{
+  "api_keys": {
+    "openai_api_key": "your-openai-api-key-here",
+    "serper_api_key": "your-serper-api-key-here",
+    "sendgrid_api_key": "your-sendgrid-api-key-here"
+  },
+  "google_credentials": {
+    "credentials_file": "path-to-google-credentials.json",
+    "forms_api_enabled": true,
+    "sheets_api_enabled": true
+  },
+  "system_settings": {
+    "llm_model": "gpt-3.5-turbo",
+    "temperature": 0.7,
+    "max_tokens": 2000,
+    "timeout": 30
+  },
+  "restaurant_settings": {
+    "max_recommendations": 5,
+    "evaluation_weights": {
+      "rating": 0.4,
+      "price": 0.3,
+      "distance": 0.2,
+      "review_quality": 0.1
+    },
+    "price_ranges": {
+      "low": 10000,
+      "medium": 30000,
+      "high": 50000
+    }
+  },
+  "survey_settings": {
+    "questions": {
+      "preference_question": "가장 마음에 드는 맛집을 선택해주세요",
+      "satisfaction_question": "각 맛집에 대한 만족도를 평가해주세요 (1-5점)",
+      "price_question": "가격이 적절하다고 생각하시나요? (1-5점)",
+      "additional_question": "추가로 추천하고 싶은 맛집이 있으신가요?",
+      "improvement_question": "개선사항이나 의견이 있으시면 자유롭게 작성해주세요"
+    },
+    "response_deadline_days": 7,
+    "min_responses": 5
+  },
+  "email_settings": {
+    "sender_name": "맛집 추천 시스템",
+    "sender_email": "noreply@restaurant-system.com",
+    "subject_template": "[맛집 추천] 설문조사 참여 요청",
+    "email_template": "templates/email_template.html",
+    "recipients": [
+      "user1@example.com",
+      "user2@example.com",
+      "user3@example.com"
+    ]
+  },
+  "data_analysis": {
+    "visualization": {
+      "chart_style": "seaborn",
+      "color_palette": "Set2",
+      "figure_size": [10, 6]
+    },
+    "output_formats": ["html", "pdf", "png"],
+    "report_template": "templates/report_template.html"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/system.log",
+    "max_size_mb": 10,
+    "backup_count": 5
+  }
+}

@@ -1,0 +1,10 @@
+crewai
+crewai-tools
+langchain-openai
+langchain-google-genai
+google-generativeai
+pandas
+matplotlib
+seaborn
+sendgrid
+google-api-python-client
