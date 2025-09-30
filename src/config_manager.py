@@ -69,10 +69,21 @@ class ConfigManager:
                 self.logger.error("설정이 로딩되지 않았습니다.")
                 return False
             
-            # API 키 설정
+            # API 키 설정 (LLM provider에 따라)
             api_keys = self.config.get('api_keys', {})
+            system_settings = self.config.get('system_settings', {})
+            llm_provider = system_settings.get('llm_provider', 'gemini')
+            
             for key, value in api_keys.items():
-                if value and value != f"your-{key}-here":
+                # LLM provider에 따라 필요한 키만 설정
+                should_set = True
+                
+                # OpenAI 키는 provider가 openai일 때만 설정
+                if key == 'openai_api_key' and llm_provider != 'openai':
+                    should_set = False
+                    self.logger.info(f"OpenAI 사용 안 함 - OPENAI_API_KEY 환경 변수 설정 생략")
+                
+                if should_set and value and value != f"your-{key}-here":
                     os.environ[key.upper()] = value
                     self.logger.info(f"환경 변수 설정: {key.upper()}")
                     
@@ -80,8 +91,9 @@ class ConfigManager:
                     if key == 'gemini_api_key':
                         os.environ['GOOGLE_API_KEY'] = value
                         self.logger.info("환경 변수 설정: GOOGLE_API_KEY")
-                else:
-                    self.logger.warning(f"API 키가 설정되지 않았습니다: {key}")
+                elif not value or value == f"your-{key}-here":
+                    if should_set:
+                        self.logger.warning(f"API 키가 설정되지 않았습니다: {key}")
             
             # Google 자격 증명 설정
             google_creds = self.config.get('google_credentials', {})
