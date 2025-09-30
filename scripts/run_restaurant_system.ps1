@@ -7,6 +7,14 @@ param(
     [switch]$Help = $false
 )
 
+# 프로젝트 루트 디렉토리로 이동
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = Split-Path -Parent $ScriptDir
+Set-Location $ProjectRoot
+
+Write-Host "📁 프로젝트 루트: $ProjectRoot" -ForegroundColor Cyan
+Write-Host ""
+
 # Color settings
 $ErrorColor = "Red"
 $SuccessColor = "Green"
@@ -103,11 +111,15 @@ function Check-ConfigFile {
     param([string]$ConfigFile)
     
     if (Test-Path $ConfigFile) {
-        Write-ColorOutput "Config file found: $ConfigFile" $SuccessColor
+        Write-ColorOutput "✅ Config file found: $ConfigFile" $SuccessColor
         return $true
     } else {
-        Write-ColorOutput "Config file not found: $ConfigFile" $WarningColor
-        Write-ColorOutput "Please create config.json and set your API keys" $WarningColor
+        Write-ColorOutput "❌ Config file not found: $ConfigFile" $WarningColor
+        Write-ColorOutput "💡 config/config_example.json을 복사하여 config/config.json을 생성하고 API 키를 설정하세요" $WarningColor
+        Write-ColorOutput ""
+        Write-ColorOutput "실행 방법:" $InfoColor
+        Write-ColorOutput "  copy config\config_example.json config\config.json" $InfoColor
+        Write-ColorOutput "  notepad config\config.json" $InfoColor
         return $false
     }
 }
@@ -126,8 +138,10 @@ function Run-AdvancedSystem {
         Write-ColorOutput ""
     }
     
-    # advanced_restaurant_system.py 실행
-    python advanced_restaurant_system.py
+    # src/advanced_restaurant_system.py 실행 (모듈 방식)
+    Write-ColorOutput "🔧 실행 중: python -m src.advanced_restaurant_system" $InfoColor
+    Write-ColorOutput ""
+    python -m src.advanced_restaurant_system
     
     if ($LASTEXITCODE -eq 0) {
         Write-ColorOutput ""
@@ -135,6 +149,7 @@ function Run-AdvancedSystem {
     } else {
         Write-ColorOutput ""
         Write-ColorOutput "❌ 시스템 실행 중 오류 발생" $ErrorColor
+        Write-ColorOutput "💡 로그 파일을 확인하세요: logs\" $WarningColor
     }
 }
 
@@ -146,9 +161,11 @@ function Run-Tests {
     Write-ColorOutput ""
     
     # Test advanced system
-    if (Test-Path "test_advanced_system.py") {
+    if (Test-Path "tests\test_advanced_system.py") {
         Write-ColorOutput "Testing advanced system..." $InfoColor
-        python test_advanced_system.py
+        Write-ColorOutput "🔧 실행 중: python -m tests.test_advanced_system" $InfoColor
+        Write-ColorOutput ""
+        python -m tests.test_advanced_system
         
         if ($LASTEXITCODE -eq 0) {
             Write-ColorOutput "✅ 테스트 완료!" $SuccessColor
@@ -156,7 +173,23 @@ function Run-Tests {
             Write-ColorOutput "❌ 테스트 실패" $ErrorColor
         }
     } else {
-        Write-ColorOutput "⚠️  test_advanced_system.py 파일을 찾을 수 없습니다" $WarningColor
+        Write-ColorOutput "⚠️  tests/test_advanced_system.py 파일을 찾을 수 없습니다" $WarningColor
+    }
+    
+    Write-ColorOutput ""
+    
+    # Test restaurant finder
+    if (Test-Path "tests\test_restaurant_finder.py") {
+        Write-ColorOutput "Testing restaurant finder..." $InfoColor
+        Write-ColorOutput "🔧 실행 중: python -m tests.test_restaurant_finder" $InfoColor
+        Write-ColorOutput ""
+        python -m tests.test_restaurant_finder
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-ColorOutput "✅ 테스트 완료!" $SuccessColor
+        } else {
+            Write-ColorOutput "❌ 테스트 실패" $ErrorColor
+        }
     }
 }
 
@@ -188,9 +221,8 @@ if (-not (Install-Dependencies)) {
 
 # Check config file
 Write-ColorOutput ""
-if (-not (Check-ConfigFile "config.json")) {
-    Write-ColorOutput "⚠️  config.json 파일을 먼저 설정해주세요" $WarningColor
-    Write-ColorOutput "💡 config_example.json을 참고하세요" $InfoColor
+if (-not (Check-ConfigFile "config\config.json")) {
+    Write-ColorOutput "⚠️  config/config.json 파일을 먼저 설정해주세요" $WarningColor
     exit 1
 }
 
@@ -205,4 +237,7 @@ Run-AdvancedSystem -Request $Request
 
 Write-ColorOutput ""
 Write-ColorOutput "📁 로그 파일 위치: logs\" $InfoColor
+Write-ColorOutput "📚 문서 위치:" $InfoColor
+Write-ColorOutput "   - 사용 가이드: docs\guides\" $InfoColor
+Write-ColorOutput "   - 기술 참조: docs\reference\" $InfoColor
 Write-ColorOutput ""
