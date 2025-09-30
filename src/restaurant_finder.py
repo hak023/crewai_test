@@ -5,7 +5,8 @@ CrewAI를 활용한 맛집 추천 시스템
 
 import os
 from crewai import Agent, Task, Crew, Process
-from crewai_tools import SerperDevTool, WebsiteSearchTool
+from crewai_tools import SerperDevTool
+# WebsiteSearchTool은 OpenAI를 내부적으로 사용하므로 Gemini 환경에서는 제외
 from langchain_google_genai import ChatGoogleGenerativeAI
 import json
 from typing import List, Dict, Any
@@ -30,7 +31,8 @@ class RestaurantFinder:
     def __init__(self):
         # 도구 설정
         self.search_tool = SerperDevTool()
-        self.web_search_tool = WebsiteSearchTool()
+        # WebsiteSearchTool은 OpenAI를 사용하므로 제거 (Gemini 사용 시)
+        # self.web_search_tool = WebsiteSearchTool()
         
         # 지연 초기화를 위한 플래그
         self._initialized = False
@@ -57,7 +59,7 @@ class RestaurantFinder:
             backstory="""당신은 맛집 정보 수집의 전문가입니다. 
             웹 검색, 위치 정보, 맛집 API를 활용하여 사용자가 원하는 조건에 맞는 
             모든 관련 맛집 정보를 체계적으로 수집합니다.""",
-            tools=[],
+            tools=[self.search_tool],  # SerperDevTool만 사용 (Gemini 호환)
             verbose=True,
             allow_delegation=False,
             llm=self.llm  # LLM 명시적 설정

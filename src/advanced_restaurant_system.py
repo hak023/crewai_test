@@ -20,7 +20,8 @@ import seaborn as sns
 from contextlib import redirect_stdout, redirect_stderr
 
 from crewai import Agent, Task, Crew, Process
-from crewai_tools import SerperDevTool, WebsiteSearchTool, CodeInterpreterTool
+from crewai_tools import SerperDevTool, CodeInterpreterTool
+# WebsiteSearchTool은 OpenAI를 내부적으로 사용하므로 Gemini 환경에서는 제외
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # 프로젝트 루트 경로 추가
@@ -51,7 +52,8 @@ class AdvancedRestaurantSystem:
         
         # 도구 설정
         self.search_tool = SerperDevTool()
-        self.web_search_tool = WebsiteSearchTool()
+        # WebsiteSearchTool은 OpenAI를 사용하므로 제거 (Gemini 사용 시)
+        # self.web_search_tool = WebsiteSearchTool()
         
         # 코드 실행 도구 (구글 폼 생성, 이메일 발송 등)
         try:
@@ -126,14 +128,14 @@ class AdvancedRestaurantSystem:
             backstory="""당신은 맛집 정보 수집의 전문가입니다. 
             웹 검색, 위치 정보, 맛집 API를 활용하여 사용자가 원하는 조건에 맞는 
             모든 관련 맛집 정보를 체계적으로 수집합니다.""",
-            tools=[self.search_tool, self.web_search_tool],
+            tools=[self.search_tool],  # SerperDevTool만 사용 (Gemini 호환)
             llm=self.llm,
             verbose=True,
             allow_delegation=False
         )
         self.logger.log_agent_creation("researcher", {
             "role": "맛집 정보 수집 전문가",
-            "tools": ["search_tool", "web_search_tool"]
+            "tools": ["search_tool"]
         })
         
         # ② 큐레이터 에이전트 (The Curator) - 기존
@@ -142,16 +144,15 @@ class AdvancedRestaurantSystem:
             goal='수집된 맛집 정보를 분석하여 최고의 추천 리스트를 선별합니다',
             backstory="""당신은 맛집 큐레이터로서 수집된 방대한 정보 중에서 
             사용자의 조건에 가장 적합한 식당을 선별하는 전문가입니다. 
-            평점, 가격, 거리, 리뷰 품질 등을 종합적으로 평가하여 최적의 추천을 제공합니다.
-            필요시 웹사이트를 직접 확인하여 추가 정보를 검증합니다.""",
-            tools=[self.web_search_tool],
+            평점, 가격, 거리, 리뷰 품질 등을 종합적으로 평가하여 최적의 추천을 제공합니다.""",
+            tools=[],  # 도구 없이 리서처의 정보만으로 분석 (Gemini 호환)
             llm=self.llm,
             verbose=True,
             allow_delegation=False
         )
         self.logger.log_agent_creation("curator", {
             "role": "맛집 큐레이터",
-            "tools": ["web_search_tool"]
+            "tools": []
         })
         
         # ③ 커뮤니케이터 에이전트 (The Communicator) - 기존
@@ -242,8 +243,7 @@ class AdvancedRestaurantSystem:
             description="""사용자 요청: {user_request}
             
             **사용 가능한 도구:**
-            - SerperDevTool: 웹 검색으로 맛집 정보, 리뷰, 평점 등을 검색
-            - WebsiteSearchTool: 맛집 웹사이트에서 메뉴, 가격, 영업시간 등 상세 정보 추출
+            - SerperDevTool: 웹 검색으로 맛집 정보, 리뷰, 평점, 메뉴, 가격, 영업시간 등을 검색
             
             **수집해야 할 정보:**
             1. 요청된 지역의 맛집 정보 (이름, 주소, 전화번호)
@@ -253,9 +253,9 @@ class AdvancedRestaurantSystem:
             5. 최근 리뷰 트렌드 및 인기 메뉴
             
             **도구 사용 가이드:**
-            - 먼저 SerperDevTool로 맛집 목록을 검색하세요
-            - 각 맛집의 공식 웹사이트나 리뷰 사이트를 WebsiteSearchTool로 탐색하세요
-            - 최소 5~10개의 맛집 정보를 수집하세요
+            - SerperDevTool로 맛집 목록, 리뷰, 평점, 메뉴, 가격 등을 종합적으로 검색하세요
+            - 다양한 검색어를 사용하여 더 많은 정보를 수집하세요 (예: "맛집명 리뷰", "맛집명 메뉴", "맛집명 가격")
+            - 최소 3~5개의 맛집 정보를 수집하세요
             
             수집된 정보를 구조화된 형태로 정리하여 다음 에이전트에게 전달하세요.""",
             agent=self.researcher,
@@ -265,9 +265,6 @@ class AdvancedRestaurantSystem:
         self.curation_task = Task(
             description="""리서처가 수집한 맛집 정보를 분석하여 최고의 추천 리스트를 선별하세요.
             
-            **사용 가능한 도구:**
-            - WebsiteSearchTool: 의심스러운 정보가 있을 경우 웹사이트에서 직접 확인
-            
             **평가 기준:**
             1. 평점 (40% 가중치) - 4.0 이상 우선
             2. 가격 적정성 (30% 가중치) - 사용자 예산 범위 내
@@ -276,10 +273,9 @@ class AdvancedRestaurantSystem:
             
             **선별 프로세스:**
             1. 리서처의 데이터를 평가 기준에 따라 점수화
-            2. 의심스러운 정보는 WebsiteSearchTool로 직접 확인
-            3. 상위 3-5개의 맛집을 선별
-            4. 각 맛집의 강점과 약점을 명시
-            5. 왜 이 맛집을 추천하는지 구체적인 이유 작성
+            2. 상위 3-5개의 맛집을 선별
+            3. 각 맛집의 강점과 약점을 명시
+            4. 왜 이 맛집을 추천하는지 구체적인 이유 작성
             
             최종적으로 상위 3-5개의 맛집을 선별하고, 각각의 추천 이유를 명시하세요.""",
             agent=self.curator,

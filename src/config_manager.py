@@ -146,13 +146,18 @@ class ConfigManager:
                 self.logger.error(f"필수 설정 섹션이 없습니다: {section}")
                 return False
         
-        # API 키 검증
+        # API 키 검증 (Gemini 사용 시)
         api_keys = self.config.get('api_keys', {})
-        required_keys = ['openai_api_key']
+        system_settings = self.config.get('system_settings', {})
+        llm_provider = system_settings.get('llm_provider', 'gemini')
         
-        for key in required_keys:
-            if not api_keys.get(key) or api_keys.get(key) == f"your-{key}-here":
-                self.logger.warning(f"필수 API 키가 설정되지 않았습니다: {key}")
+        # LLM provider에 따라 필수 키 확인
+        if llm_provider == 'gemini':
+            if not api_keys.get('gemini_api_key') or api_keys.get('gemini_api_key') == 'your-gemini-api-key-here':
+                self.logger.warning(f"필수 API 키가 설정되지 않았습니다: gemini_api_key")
+        elif llm_provider == 'openai':
+            if not api_keys.get('openai_api_key') or api_keys.get('openai_api_key') == 'your-openai-api-key-here':
+                self.logger.warning(f"필수 API 키가 설정되지 않았습니다: openai_api_key")
         
         return True
     
