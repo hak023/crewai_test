@@ -438,21 +438,23 @@ class AdvancedRestaurantSystem:
         )
         
         self.email_sending_task = Task(
-            description="""설문조사 링크를 포함한 이메일 콘텐츠를 작성하세요.
+            description="""의견조사 링크를 포함한 이메일 콘텐츠를 작성하세요.
             
             **반드시 다음 형식으로 응답하세요:**
             
             ===== 이메일 콘텐츠 시작 =====
             
-            제목: [맛집 추천] 설문조사 참여 부탁드립니다
+            제목: [KT 막내야! 오늘 회식 장소가 어디야? 서비스] 회식 장소 선정을 위한 의견 부탁드립니다
             
             안녕하세요!
+
+            KT "막내야! 오늘 회식 장소가 어디야?" 서비스 입니다.
             
-            귀하께서 요청하신 맛집 추천을 완료했습니다.
+            오늘 회식을 위해 엄선된 맛집 선택지를 마련 했습니다.
             
-            [맛집 추천 간단 요약 - 2-3줄]
+            [선정된 장소에 대해 간단 요약 - 2-3줄]
             
-            더 나은 서비스를 위해 간단한 설문조사에 참여해주시면 감사하겠습니다.
+            회식 장소 선정을 위해 원하는 선택지를 골라주시면 감사하겠습니다.
             
             📋 설문조사 링크: {survey_link}
             
@@ -461,7 +463,7 @@ class AdvancedRestaurantSystem:
             소중한 의견 부탁드립니다.
             감사합니다!
             
-            맛집 추천 시스템 드림
+            KT "막내야! 오늘 회식 장소가 어디야?" 서비스 드림
             
             ===== 이메일 콘텐츠 종료 =====
             
@@ -473,7 +475,7 @@ class AdvancedRestaurantSystem:
             - 설문조사 링크를 반드시 포함하세요.
             - 이메일은 친근하고 간결하게 작성하세요.
             
-            설문조사 링크: {survey_link}
+            의견 조사 링크: {survey_link}
             이메일 수신자: {email_recipients}""",
             agent=self.email_sender,
             expected_output="완전한 이메일 콘텐츠 (제목, 본문, 발송 정보 포함)"
@@ -1450,22 +1452,29 @@ class AdvancedRestaurantSystem:
             
             # 3. 이메일 발송
             print("\n3️⃣ 이메일 발송 단계")
-            self.logger.logger.info("" * 80)
+            self.logger.logger.info("=" * 80)
             self.logger.logger.info("3️⃣ 이메일 발송 단계 시작")
             self.set_email_recipients(email_recipients)
             email_result = self.send_survey_emails(survey_form)
             
-            # 4. 응답 대기
-            print("\n4️⃣ 응답 수집 대기")
-            self.logger.logger.info("4️⃣ 응답 수집 대기 (시뮬레이션)")
+            # 4. 응답 수집 안내
+            print("\n" + "=" * 80)
+            print("✅ 설문조사 이메일 발송 완료!")
+            print("=" * 80)
+            print("\n📊 다음 단계:")
+            print("   1. 설문조사 응답을 기다립니다")
+            print("   2. 충분한 응답이 수집되면:")
+            print("      python src/survey_data_analyzer.py")
+            print("   3. 위 명령어로 응답 분석 및 리포트 생성")
+            print("\n💡 설문조사 링크:")
+            survey_link = self._extract_survey_link(str(survey_form))
+            print(f"   {survey_link}")
+            print("=" * 80 + "\n")
             
-            # 5. 데이터 분석
-            print("\n5️⃣ 데이터 분석 단계")
-            self.logger.logger.info("" * 80)
-            self.logger.logger.info("5️⃣ 데이터 분석 단계 시작")
-            mock_survey_data = self._generate_mock_survey_data()
-            self.logger.logger.info(f"📊 모의 데이터 생성 완료: {mock_survey_data}")
-            analysis_result = self.analyze_survey_data(mock_survey_data)
+            self.logger.logger.info("=" * 80)
+            self.logger.logger.info("✅ 워크플로우 완료 (이메일 발송까지)")
+            self.logger.logger.info("💡 응답 분석은 survey_data_analyzer.py를 사용하세요")
+            self.logger.logger.info("=" * 80)
             
             # 전체 워크플로우 완료
             workflow_time = time.time() - workflow_start_time
@@ -1477,7 +1486,7 @@ class AdvancedRestaurantSystem:
                 "recommendations": recommendations,
                 "survey_form": survey_form,
                 "email_result": email_result,
-                "analysis_result": analysis_result,
+                "survey_link": survey_link,
                 "workflow_execution_time": workflow_time
             }
             

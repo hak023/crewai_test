@@ -38,6 +38,9 @@ config/token.json
 logs/*.log
 logs/*.json
 
+# 리포트 파일
+reports/
+
 # IDE
 .vscode/
 .idea/
