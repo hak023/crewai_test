@@ -42,7 +42,10 @@
   },
   "email_settings": {
     "sender_name": "맛집 추천 시스템",
-    "sender_email": "noreply@restaurant-system.com",
+    "sender_email": "your_email@gmail.com",
+    "sender_password": "your_app_password_here",
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
     "subject_template": "[맛집 추천] 설문조사 참여 요청",
     "email_template": "templates/email_template.html",
     "recipients": [

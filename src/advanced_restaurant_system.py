@@ -1169,11 +1169,21 @@ class AdvancedRestaurantSystem:
         
         # SMTP 설정 확인
         if not sender_email or not sender_password:
-            self.logger.logger.warning(f"⚠️  SMTP 설정이 없습니다. 이메일을 시뮬레이션합니다.")
+            self.logger.logger.warning(f"⚠️  SMTP 설정이 없습니다.")
+            self.logger.logger.warning(f"⚠️  config.json의 email_settings에 다음 정보를 입력하세요:")
+            self.logger.logger.warning(f"   - sender_email: 발신자 Gmail 주소")
+            self.logger.logger.warning(f"   - sender_password: Gmail 앱 비밀번호")
+            self.logger.logger.warning(f"")
+            self.logger.logger.warning(f"📚 Gmail 앱 비밀번호 생성 방법:")
+            self.logger.logger.warning(f"   1. Google 계정 설정 접속")
+            self.logger.logger.warning(f"   2. 보안 > 2단계 인증 활성화")
+            self.logger.logger.warning(f"   3. 앱 비밀번호 생성")
+            self.logger.logger.warning(f"   4. 생성된 16자리 비밀번호를 config.json에 입력")
+            self.logger.logger.warning(f"")
             self.logger.logger.info(f"📧 이메일 시뮬레이션: {recipient}")
             self.logger.logger.info(f"   제목: {subject}")
-            self.logger.logger.info(f"   본문: {body[:500]}...")
-            return True
+            self.logger.logger.info(f"   설문조사 링크: {survey_link}")
+            return False
         
         try:
             # HTML 이메일 본문 생성
@@ -1223,11 +1233,24 @@ class AdvancedRestaurantSystem:
             self.logger.logger.info(f"✅ 이메일 발송 완료: {recipient}")
             return True
             
+        except smtplib.SMTPAuthenticationError as e:
+            self.logger.logger.error(f"❌ SMTP 인증 실패: {recipient}")
+            self.logger.logger.error(f"   오류: {e}")
+            self.logger.logger.error(f"")
+            self.logger.logger.error(f"💡 해결 방법:")
+            self.logger.logger.error(f"   1. Gmail 계정 설정에서 '2단계 인증' 활성화")
+            self.logger.logger.error(f"   2. '앱 비밀번호' 생성 (16자리)")
+            self.logger.logger.error(f"   3. config.json에 생성된 앱 비밀번호 입력")
+            self.logger.logger.error(f"   4. 일반 Gmail 비밀번호가 아닌 '앱 비밀번호'를 사용해야 함!")
+            return False
+        except smtplib.SMTPException as e:
+            self.logger.logger.error(f"❌ SMTP 오류: {recipient} - {e}")
+            self.logger.logger.error(f"   SMTP 서버: {smtp_server}:{smtp_port}")
+            self.logger.logger.error(f"   발신자: {sender_email}")
+            return False
         except Exception as e:
             self.logger.logger.error(f"❌ 이메일 발송 실패: {recipient} - {e}")
-            self.logger.logger.info(f"📧 이메일 시뮬레이션: {recipient}")
-            self.logger.logger.info(f"   제목: {subject}")
-            self.logger.logger.info(f"   본문: {body[:500]}...")
+            self.logger.logger.error(f"   예상치 못한 오류가 발생했습니다.")
             return False
     
     def send_survey_emails(self, survey_link: str) -> str:
