@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 CrewAI를 활용한 고급 맛집 추천 및 설문조사 시스템
 6개의 전문 에이전트가 협력하여 맛집 추천부터 설문조사, 데이터 분석까지 수행합니다.
@@ -977,7 +978,6 @@ class AdvancedRestaurantSystem:
         except Exception as e:
             self.logger.logger.error(f"❌ 설문조사 생성 중 오류: {e}")
             return None
-        """
     
     def create_survey_form(self, restaurant_recommendations: str) -> str:
         """설문조사 폼을 생성합니다."""
@@ -1010,10 +1010,10 @@ class AdvancedRestaurantSystem:
 3. 가격 적정성 평가 (1-5점)
 4. 추가 의견 (주관식)
 
-✅ Google Forms API를 사용하여 실제 설문조사가 생성되었습니다!
-📋 응답 수집 링크: {google_form_url}
+[완료] Google Forms API를 사용하여 실제 설문조사가 생성되었습니다!
+[링크] 응답 수집 링크: {google_form_url}
 
-💡 이 설문지는 OAuth 2.0 인증을 통해 귀하의 Google 계정으로 생성되었습니다.
+[안내] 이 설문지는 OAuth 2.0 인증을 통해 귀하의 Google 계정으로 생성되었습니다.
    Google Forms에서 응답을 실시간으로 확인할 수 있습니다.
 """
                 execution_time = time.time() - start_time
@@ -1101,41 +1101,30 @@ class AdvancedRestaurantSystem:
         
         try:
             # HTML 이메일 본문 생성
-            html_body = f"""
-<html>
-<head>
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }}
-        .content {{ background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; }}
-        .button {{ display: inline-block; padding: 12px 24px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
-        .footer {{ text-align: center; padding: 20px; font-size: 12px; color: #777; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🍽️ 맛집 추천 설문조사</h1>
-        </div>
-        <div class="content">
-            <p>안녕하세요!</p>
-            <p>귀하께서 요청하신 맛집 추천을 완료했습니다.</p>
-            <p>더 나은 서비스를 위해 간단한 설문조사에 참여해주시면 감사하겠습니다.</p>
-            <p style="text-align: center;">
-                <a href="{survey_link}" class="button">📋 설문조사 참여하기</a>
-            </p>
-            <p><strong>설문조사 링크:</strong> <a href="{survey_link}">{survey_link}</a></p>
-            <p>소중한 의견 부탁드립니다.<br>감사합니다!</p>
-            <p style="margin-top: 20px;"><strong>맛집 추천 시스템 드림</strong></p>
-        </div>
-        <div class="footer">
-            <p>이 이메일은 자동으로 발송되었습니다.</p>
-        </div>
-    </div>
-</body>
-</html>
-            """
+            html_template = (
+                '<html><head><style>'
+                'body{font-family:Arial,sans-serif;line-height:1.6;color:#333}'
+                '.container{max-width:600px;margin:0 auto;padding:20px}'
+                '.header{background-color:#4CAF50;color:white;padding:20px;text-align:center;border-radius:5px 5px 0 0}'
+                '.content{background-color:#f9f9f9;padding:20px;border:1px solid #ddd}'
+                '.button{display:inline-block;padding:12px 24px;background-color:#4CAF50;color:white;text-decoration:none;border-radius:5px;margin:20px 0}'
+                '.footer{text-align:center;padding:20px;font-size:12px;color:#777}'
+                '</style></head><body>'
+                '<div class="container">'
+                '<div class="header"><h1>맛집 추천 설문조사</h1></div>'
+                '<div class="content">'
+                '<p>안녕하세요!</p>'
+                '<p>귀하께서 요청하신 맛집 추천을 완료했습니다.</p>'
+                '<p>더 나은 서비스를 위해 간단한 설문조사에 참여해주시면 감사하겠습니다.</p>'
+                '<p style="text-align:center;"><a href="{SURVEY_LINK}" class="button">설문조사 참여하기</a></p>'
+                '<p><strong>설문조사 링크:</strong> <a href="{SURVEY_LINK}">{SURVEY_LINK}</a></p>'
+                '<p>소중한 의견 부탁드립니다.<br>감사합니다!</p>'
+                '<p style="margin-top:20px;"><strong>맛집 추천 시스템 드림</strong></p>'
+                '</div>'
+                '<div class="footer"><p>이 이메일은 자동으로 발송되었습니다.</p></div>'
+                '</div></body></html>'
+            )
+            html_body = html_template.replace("{SURVEY_LINK}", survey_link)
             
             # 이메일 메시지 생성
             msg = MIMEMultipart('alternative')
