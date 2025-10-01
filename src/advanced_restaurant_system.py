@@ -636,22 +636,182 @@ class AdvancedRestaurantSystem:
             self.logger.log_task_error(task_id, e, execution_time)
             raise
     
-    def _create_google_form(self, restaurant_recommendations: str) -> str:
-        """Google Forms API를 사용하여 실제 설문조사를 생성합니다."""
+    def _create_google_form_alternative(self, restaurant_recommendations: str) -> str:
+        """Google Sheets를 사용하여 설문조사 응답 수집 시트를 생성합니다."""
         try:
             # Google 서비스 계정 인증
-            credentials_path = config.get_system_settings().get("google_credentials_path", "config/google_credentials.json")
+            google_creds = config.config.get("google_credentials", {})
+            credentials_file = google_creds.get("credentials_file", "google_credentials.json")
+            
+            # 상대 경로를 절대 경로로 변환
+            if not os.path.isabs(credentials_file):
+                credentials_path = str(PROJECT_ROOT / "config" / credentials_file)
+            else:
+                credentials_path = credentials_file
             
             if not os.path.exists(credentials_path):
                 self.logger.logger.warning(f"⚠️  Google credentials 파일을 찾을 수 없습니다: {credentials_path}")
                 return None
             
-            credentials = service_account.Credentials.from_service_account_file(
-                credentials_path,
-                scopes=['https://www.googleapis.com/auth/forms.body']
-            )
+            self.logger.logger.info(f"✅ Google credentials 파일 발견: {credentials_path}")
             
-            service = build('forms', 'v1', credentials=credentials)
+            # Google Sheets API 사용
+            try:
+                credentials = service_account.Credentials.from_service_account_file(
+                    credentials_path,
+                    scopes=[
+                        'https://www.googleapis.com/auth/spreadsheets',
+                        'https://www.googleapis.com/auth/drive'
+                    ]
+                )
+                self.logger.logger.info("✅ Google 서비스 계정 인증 성공")
+            except Exception as auth_error:
+                self.logger.logger.error(f"❌ Google 인증 실패: {auth_error}")
+                return None
+            
+            try:
+                sheets_service = build('sheets', 'v4', credentials=credentials)
+                drive_service = build('drive', 'v3', credentials=credentials)
+                self.logger.logger.info("✅ Google Sheets/Drive API 서비스 생성 성공")
+            except Exception as service_error:
+                self.logger.logger.error(f"❌ Google API 서비스 생성 실패: {service_error}")
+                return None
+            
+            # 맛집 목록 파싱
+            restaurants = []
+            for line in restaurant_recommendations.split('\n'):
+                if line.strip().startswith('**[') and '위]':
+                    match = re.search(r'\*\*\[.*?\]\s*(.*?)\*\*', line)
+                    if match:
+                        restaurants.append(match.group(1).strip())
+            
+            # Google Sheets 생성
+            spreadsheet = {
+                'properties': {
+                    'title': f'맛집 추천 설문조사 응답 - {datetime.now().strftime("%Y%m%d_%H%M%S")}'
+                },
+                'sheets': [
+                    {
+                        'properties': {
+                            'title': '응답 데이터',
+                            'gridProperties': {
+                                'rowCount': 100,
+                                'columnCount': len(restaurants) + 5
+                            }
+                        }
+                    }
+                ]
+            }
+            
+            self.logger.logger.info("🔧 Google Sheets 생성 중...")
+            try:
+                sheet = sheets_service.spreadsheets().create(body=spreadsheet).execute()
+                spreadsheet_id = sheet['spreadsheetId']
+                spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+                self.logger.logger.info(f"✅ Google Sheets 생성 성공! ID: {spreadsheet_id}")
+            except Exception as create_error:
+                self.logger.logger.error(f"❌ Google Sheets 생성 실패: {create_error}")
+                return None
+            
+            # 헤더 행 생성
+            headers = ['타임스탬프', '이름', '이메일', '가장 선호하는 맛집']
+            for restaurant in restaurants:
+                headers.append(f'{restaurant} - 만족도 (1-5)')
+            headers.append('가격 적정성 (1-5)')
+            headers.append('추가 의견')
+            
+            # 헤더 입력
+            try:
+                values = [headers]
+                body = {'values': values}
+                sheets_service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range='응답 데이터!A1',
+                    valueInputOption='RAW',
+                    body=body
+                ).execute()
+                self.logger.logger.info(f"✅ 헤더 행 추가 완료!")
+            except Exception as header_error:
+                self.logger.logger.error(f"❌ 헤더 추가 실패: {header_error}")
+            
+            # 시트를 누구나 편집 가능하도록 공유 설정
+            try:
+                permission = {
+                    'type': 'anyone',
+                    'role': 'writer'
+                }
+                drive_service.permissions().create(
+                    fileId=spreadsheet_id,
+                    body=permission
+                ).execute()
+                self.logger.logger.info(f"✅ 시트 공유 설정 완료 (누구나 편집 가능)")
+            except Exception as share_error:
+                self.logger.logger.warning(f"⚠️  시트 공유 설정 실패: {share_error}")
+            
+            self.logger.logger.info(f"✅ Google Sheets 설문조사 생성 완료!")
+            self.logger.logger.info(f"   📊 시트 링크: {spreadsheet_url}")
+            self.logger.logger.info(f"   🍽️  추출된 맛집: {len(restaurants)}개")
+            
+            return spreadsheet_url
+            
+        except HttpError as e:
+            self.logger.logger.error(f"❌ Google Sheets 생성 실패: {e}")
+            return None
+        except Exception as e:
+            self.logger.logger.error(f"❌ 설문조사 생성 중 오류: {e}")
+            return None
+    
+    def _create_google_form(self, restaurant_recommendations: str) -> str:
+        """Google Forms API를 사용하여 실제 설문조사를 생성합니다."""
+        
+        # Google Forms API는 현재 제한적으로 접근 가능하므로
+        # Google Sheets를 사용한 대안 방법 사용
+        self.logger.logger.info("📝 Google Sheets를 사용하여 설문조사 응답 시트를 생성합니다...")
+        return self._create_google_form_alternative(restaurant_recommendations)
+        
+        # 아래는 Google Forms API 코드 (현재 500 에러 발생)
+        """
+        try:
+            # Google 서비스 계정 인증
+            google_creds = config.config.get("google_credentials", {})
+            credentials_file = google_creds.get("credentials_file", "google_credentials.json")
+            
+            # 상대 경로를 절대 경로로 변환
+            if not os.path.isabs(credentials_file):
+                credentials_path = str(PROJECT_ROOT / "config" / credentials_file)
+            else:
+                credentials_path = credentials_file
+            
+            if not os.path.exists(credentials_path):
+                self.logger.logger.warning(f"⚠️  Google credentials 파일을 찾을 수 없습니다: {credentials_path}")
+                self.logger.logger.info(f"   현재 경로: {os.getcwd()}")
+                self.logger.logger.info(f"   찾는 경로: {credentials_path}")
+                return None
+            
+            self.logger.logger.info(f"✅ Google credentials 파일 발견: {credentials_path}")
+            
+            # Google Forms API에 필요한 모든 scope 포함
+            try:
+                credentials = service_account.Credentials.from_service_account_file(
+                    credentials_path,
+                    scopes=[
+                        'https://www.googleapis.com/auth/forms.body',
+                        'https://www.googleapis.com/auth/forms.responses.readonly',
+                        'https://www.googleapis.com/auth/drive',
+                        'https://www.googleapis.com/auth/drive.file'
+                    ]
+                )
+                self.logger.logger.info("✅ Google 서비스 계정 인증 성공")
+            except Exception as auth_error:
+                self.logger.logger.error(f"❌ Google 인증 실패: {auth_error}")
+                return None
+            
+            try:
+                service = build('forms', 'v1', credentials=credentials)
+                self.logger.logger.info("✅ Google Forms API 서비스 생성 성공")
+            except Exception as service_error:
+                self.logger.logger.error(f"❌ Google Forms API 서비스 생성 실패: {service_error}")
+                return None
             
             # 맛집 목록 파싱
             restaurants = []
@@ -670,9 +830,15 @@ class AdvancedRestaurantSystem:
                 }
             }
             
-            result = service.forms().create(body=form).execute()
-            form_id = result['formId']
-            form_url = f"https://docs.google.com/forms/d/{form_id}/edit"
+            self.logger.logger.info("🔧 Google Form 생성 중...")
+            try:
+                result = service.forms().create(body=form).execute()
+                form_id = result['formId']
+                form_url = f"https://docs.google.com/forms/d/{form_id}/edit"
+                self.logger.logger.info(f"✅ Google Form 생성 성공! ID: {form_id}")
+            except Exception as create_error:
+                self.logger.logger.error(f"❌ Google Form 생성 실패: {create_error}")
+                return None
             
             # 질문 추가
             questions = []
@@ -759,11 +925,18 @@ class AdvancedRestaurantSystem:
             })
             
             # 질문들을 폼에 추가
-            update = {
-                "requests": questions
-            }
-            
-            service.forms().batchUpdate(formId=form_id, body=update).execute()
+            if questions:
+                update = {
+                    "requests": questions
+                }
+                
+                self.logger.logger.info(f"🔧 {len(questions)}개 질문 추가 중...")
+                try:
+                    service.forms().batchUpdate(formId=form_id, body=update).execute()
+                    self.logger.logger.info(f"✅ 질문 추가 완료!")
+                except Exception as update_error:
+                    self.logger.logger.error(f"❌ 질문 추가 실패: {update_error}")
+                    # 질문 추가 실패해도 폼은 생성되었으므로 링크 반환
             
             # 응답 링크 생성
             response_url = f"https://docs.google.com/forms/d/e/{form_id}/viewform"
@@ -771,6 +944,7 @@ class AdvancedRestaurantSystem:
             self.logger.logger.info(f"✅ Google Form 생성 완료!")
             self.logger.logger.info(f"   📝 편집 링크: {form_url}")
             self.logger.logger.info(f"   📋 응답 링크: {response_url}")
+            self.logger.logger.info(f"   🍽️  추출된 맛집: {len(restaurants)}개")
             
             return response_url
             
@@ -780,6 +954,7 @@ class AdvancedRestaurantSystem:
         except Exception as e:
             self.logger.logger.error(f"❌ 설문조사 생성 중 오류: {e}")
             return None
+        """
     
     def create_survey_form(self, restaurant_recommendations: str) -> str:
         """설문조사 폼을 생성합니다."""
@@ -803,17 +978,20 @@ class AdvancedRestaurantSystem:
             google_form_url = self._create_google_form(recommendations_str)
             
             if google_form_url:
-                # Google Form이 성공적으로 생성된 경우
-                result_str = f"""설문조사 링크: {google_form_url}
+                # Google Sheets가 성공적으로 생성된 경우
+                result_str = f"""설문조사 응답 시트: {google_form_url}
 
 설문조사 항목:
-1. 추천된 맛집 중 가장 마음에 드는 곳은? (객관식)
+1. 추천된 맛집 중 가장 선호하는 곳
 2. 각 맛집의 추천 만족도 (1-5점)
 3. 가격 적정성 평가 (1-5점)
 4. 추가 의견 (주관식)
 
-✅ Google Forms를 사용하여 실제 설문조사가 생성되었습니다!
-📋 응답 수집 링크: {google_form_url}
+✅ Google Sheets를 사용하여 실제 설문조사 응답 시트가 생성되었습니다!
+📊 응답 수집 시트: {google_form_url}
+
+💡 이 시트는 누구나 편집 가능하도록 설정되어 있습니다.
+   응답자들이 직접 시트에 데이터를 입력할 수 있습니다.
 """
                 execution_time = time.time() - start_time
                 self.logger.log_task_response(task_id, result_str, {"execution_time": execution_time})
