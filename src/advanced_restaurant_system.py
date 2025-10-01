@@ -24,6 +24,12 @@ from crewai_tools import SerperDevTool, CodeInterpreterTool
 # WebsiteSearchTool은 OpenAI를 내부적으로 사용하므로 Gemini 환경에서는 제외
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+# Google Forms API
+from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
 # 프로젝트 루트 경로 추가
 from pathlib import Path
 import sys
@@ -419,8 +425,7 @@ class AdvancedRestaurantSystem:
             4. 추가 의견 (주관식)
             
             **중요**: 
-            - 실제 Google Forms 링크가 없다면, 테스트용 링크를 제공하세요: 
-              https://forms.gle/SURVEY-{current_date}
+            - 실제 Google Forms 링크가 없다면, 테스트용 링크를 제공하세요
             - 링크는 반드시 "설문조사 링크:" 라벨과 함께 명확히 표시하세요.
             - 설문 항목도 구체적으로 나열하세요.
             
@@ -631,6 +636,151 @@ class AdvancedRestaurantSystem:
             self.logger.log_task_error(task_id, e, execution_time)
             raise
     
+    def _create_google_form(self, restaurant_recommendations: str) -> str:
+        """Google Forms API를 사용하여 실제 설문조사를 생성합니다."""
+        try:
+            # Google 서비스 계정 인증
+            credentials_path = config.get_system_settings().get("google_credentials_path", "config/google_credentials.json")
+            
+            if not os.path.exists(credentials_path):
+                self.logger.logger.warning(f"⚠️  Google credentials 파일을 찾을 수 없습니다: {credentials_path}")
+                return None
+            
+            credentials = service_account.Credentials.from_service_account_file(
+                credentials_path,
+                scopes=['https://www.googleapis.com/auth/forms.body']
+            )
+            
+            service = build('forms', 'v1', credentials=credentials)
+            
+            # 맛집 목록 파싱
+            restaurants = []
+            for line in restaurant_recommendations.split('\n'):
+                if line.strip().startswith('**[') and '위]':
+                    # 맛집 이름 추출
+                    match = re.search(r'\*\*\[.*?\]\s*(.*?)\*\*', line)
+                    if match:
+                        restaurants.append(match.group(1).strip())
+            
+            # Google Form 생성
+            form = {
+                "info": {
+                    "title": "맛집 추천 만족도 설문조사",
+                    "documentTitle": f"맛집 설문조사 - {datetime.now().strftime('%Y%m%d')}",
+                }
+            }
+            
+            result = service.forms().create(body=form).execute()
+            form_id = result['formId']
+            form_url = f"https://docs.google.com/forms/d/{form_id}/edit"
+            
+            # 질문 추가
+            questions = []
+            
+            # 1. 객관식 - 가장 마음에 드는 맛집
+            if restaurants:
+                questions.append({
+                    "createItem": {
+                        "item": {
+                            "title": "추천된 맛집 중 가장 마음에 드는 곳은?",
+                            "questionItem": {
+                                "question": {
+                                    "required": True,
+                                    "choiceQuestion": {
+                                        "type": "RADIO",
+                                        "options": [{"value": r} for r in restaurants]
+                                    }
+                                }
+                            }
+                        },
+                        "location": {"index": 0}
+                    }
+                })
+            
+            # 2-4. 각 맛집별 만족도 (1-5점)
+            for idx, restaurant in enumerate(restaurants):
+                questions.append({
+                    "createItem": {
+                        "item": {
+                            "title": f"{restaurant} - 추천 만족도",
+                            "questionItem": {
+                                "question": {
+                                    "required": True,
+                                    "scaleQuestion": {
+                                        "low": 1,
+                                        "high": 5,
+                                        "lowLabel": "매우 불만족",
+                                        "highLabel": "매우 만족"
+                                    }
+                                }
+                            }
+                        },
+                        "location": {"index": idx + 1}
+                    }
+                })
+            
+            # 5. 가격 적정성 평가
+            questions.append({
+                "createItem": {
+                    "item": {
+                        "title": "전반적인 가격 적정성 평가",
+                        "questionItem": {
+                            "question": {
+                                "required": True,
+                                "scaleQuestion": {
+                                    "low": 1,
+                                    "high": 5,
+                                    "lowLabel": "매우 비쌈",
+                                    "highLabel": "매우 저렴"
+                                }
+                            }
+                        }
+                    },
+                    "location": {"index": len(restaurants) + 1}
+                }
+            })
+            
+            # 6. 추가 의견
+            questions.append({
+                "createItem": {
+                    "item": {
+                        "title": "추가 의견이나 개선사항을 자유롭게 적어주세요",
+                        "questionItem": {
+                            "question": {
+                                "required": False,
+                                "textQuestion": {
+                                    "paragraph": True
+                                }
+                            }
+                        }
+                    },
+                    "location": {"index": len(restaurants) + 2}
+                }
+            })
+            
+            # 질문들을 폼에 추가
+            update = {
+                "requests": questions
+            }
+            
+            service.forms().batchUpdate(formId=form_id, body=update).execute()
+            
+            # 응답 링크 생성
+            response_url = f"https://docs.google.com/forms/d/e/{form_id}/viewform"
+            
+            self.logger.logger.info(f"✅ Google Form 생성 완료!")
+            self.logger.logger.info(f"   📝 편집 링크: {form_url}")
+            self.logger.logger.info(f"   📋 응답 링크: {response_url}")
+            
+            return response_url
+            
+        except HttpError as e:
+            self.logger.logger.error(f"❌ Google Form 생성 실패: {e}")
+            return None
+        except Exception as e:
+            self.logger.logger.error(f"❌ 설문조사 생성 중 오류: {e}")
+            return None
+    
     def create_survey_form(self, restaurant_recommendations: str) -> str:
         """설문조사 폼을 생성합니다."""
         print("📝 설문조사 폼 생성")
@@ -648,37 +798,64 @@ class AdvancedRestaurantSystem:
         start_time = time.time()
         
         try:
-            # 폼 생성 에이전트 실행
-            form_crew = Crew(
-                agents=[self.form_creator],
-                tasks=[self.form_creation_task],
-                process=Process.sequential,
-                verbose=True
-            )
+            # 실제 Google Form 생성 시도
+            self.logger.logger.info("\n🔧 Google Forms API를 사용하여 실제 설문조사를 생성합니다...")
+            google_form_url = self._create_google_form(recommendations_str)
             
-            self.logger.log_task_prompt(
-                task_id=task_id,
-                prompt="설문조사 폼 생성 요청",
-                context={"recommendations": recommendations_str[:200]}
-            )
-            
-            self.logger.logger.info("🚀 폼 생성 Crew 실행 시작...")
-            self.logger.logger.info("-" * 80)
-            
-            result = form_crew.kickoff(inputs={"restaurant_recommendations": recommendations_str})
-            
-            self.logger.logger.info("-" * 80)
-            self.logger.logger.info("✅ 폼 생성 Crew 실행 완료")
-            
-            # CrewOutput을 문자열로 변환
-            result_str = str(result)
-            
-            execution_time = time.time() - start_time
-            self.logger.log_task_response(task_id, result_str, {"execution_time": execution_time})
-            self.logger.log_task_completion(task_id, result_str, execution_time)
-            self.logger.logger.info(f"✅ 설문조사 폼 생성 완료 (실행시간: {execution_time:.2f}초)")
-            
-            return result_str
+            if google_form_url:
+                # Google Form이 성공적으로 생성된 경우
+                result_str = f"""설문조사 링크: {google_form_url}
+
+설문조사 항목:
+1. 추천된 맛집 중 가장 마음에 드는 곳은? (객관식)
+2. 각 맛집의 추천 만족도 (1-5점)
+3. 가격 적정성 평가 (1-5점)
+4. 추가 의견 (주관식)
+
+✅ Google Forms를 사용하여 실제 설문조사가 생성되었습니다!
+📋 응답 수집 링크: {google_form_url}
+"""
+                execution_time = time.time() - start_time
+                self.logger.log_task_response(task_id, result_str, {"execution_time": execution_time})
+                self.logger.log_task_completion(task_id, result_str, execution_time)
+                self.logger.logger.info(f"✅ 설문조사 폼 생성 완료 (실행시간: {execution_time:.2f}초)")
+                
+                return result_str
+            else:
+                # Google Form 생성 실패 시 AI 에이전트로 폴백
+                self.logger.logger.warning("⚠️  Google Form 생성 실패. AI 에이전트로 대체합니다...")
+                
+                # 폼 생성 에이전트 실행
+                form_crew = Crew(
+                    agents=[self.form_creator],
+                    tasks=[self.form_creation_task],
+                    process=Process.sequential,
+                    verbose=True
+                )
+                
+                self.logger.log_task_prompt(
+                    task_id=task_id,
+                    prompt="설문조사 폼 생성 요청",
+                    context={"recommendations": recommendations_str[:200]}
+                )
+                
+                self.logger.logger.info("🚀 폼 생성 Crew 실행 시작...")
+                self.logger.logger.info("-" * 80)
+                
+                result = form_crew.kickoff(inputs={"restaurant_recommendations": recommendations_str})
+                
+                self.logger.logger.info("-" * 80)
+                self.logger.logger.info("✅ 폼 생성 Crew 실행 완료")
+                
+                # CrewOutput을 문자열로 변환
+                result_str = str(result)
+                
+                execution_time = time.time() - start_time
+                self.logger.log_task_response(task_id, result_str, {"execution_time": execution_time})
+                self.logger.log_task_completion(task_id, result_str, execution_time)
+                self.logger.logger.info(f"✅ 설문조사 폼 생성 완료 (실행시간: {execution_time:.2f}초)")
+                
+                return result_str
             
         except Exception as e:
             execution_time = time.time() - start_time
@@ -704,26 +881,87 @@ class AdvancedRestaurantSystem:
         self.logger.logger.warning(f"⚠️  설문조사 링크를 찾지 못함. 기본 링크 사용: {default_link}")
         return default_link
     
-    def _send_email_smtp(self, recipient: str, subject: str, body: str) -> bool:
+    def _send_email_smtp(self, recipient: str, subject: str, body: str, survey_link: str) -> bool:
         """실제 이메일을 발송합니다 (SMTP)."""
         email_settings = config.get_email_settings()
         sender_email = email_settings.get("sender_email", "")
+        sender_password = email_settings.get("sender_password", "")
+        smtp_server = email_settings.get("smtp_server", "smtp.gmail.com")
+        smtp_port = email_settings.get("smtp_port", 587)
         sender_name = email_settings.get("sender_name", "맛집 추천 시스템")
         
-        # SMTP 설정이 없으면 시뮬레이션만
-        if not sender_email:
+        # SMTP 설정 확인
+        if not sender_email or not sender_password:
+            self.logger.logger.warning(f"⚠️  SMTP 설정이 없습니다. 이메일을 시뮬레이션합니다.")
             self.logger.logger.info(f"📧 이메일 시뮬레이션: {recipient}")
             self.logger.logger.info(f"   제목: {subject}")
-            self.logger.logger.info(f"   본문: {body[:1000]}...")
+            self.logger.logger.info(f"   본문: {body[:500]}...")
             return True
         
         try:
-            # 실제 이메일 발송은 config에 SMTP 설정이 있을 때만
-            # 여기서는 시뮬레이션만 수행
+            # HTML 이메일 본문 생성
+            html_body = f"""
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }}
+        .content {{ background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; }}
+        .button {{ display: inline-block; padding: 12px 24px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
+        .footer {{ text-align: center; padding: 20px; font-size: 12px; color: #777; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍽️ 맛집 추천 설문조사</h1>
+        </div>
+        <div class="content">
+            <p>안녕하세요!</p>
+            <p>귀하께서 요청하신 맛집 추천을 완료했습니다.</p>
+            <p>더 나은 서비스를 위해 간단한 설문조사에 참여해주시면 감사하겠습니다.</p>
+            <p style="text-align: center;">
+                <a href="{survey_link}" class="button">📋 설문조사 참여하기</a>
+            </p>
+            <p><strong>설문조사 링크:</strong> <a href="{survey_link}">{survey_link}</a></p>
+            <p>소중한 의견 부탁드립니다.<br>감사합니다!</p>
+            <p style="margin-top: 20px;"><strong>맛집 추천 시스템 드림</strong></p>
+        </div>
+        <div class="footer">
+            <p>이 이메일은 자동으로 발송되었습니다.</p>
+        </div>
+    </div>
+</body>
+</html>
+            """
+            
+            # 이메일 메시지 생성
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = f"{sender_name} <{sender_email}>"
+            msg['To'] = recipient
+            
+            # 텍스트 및 HTML 파트 추가
+            text_part = MIMEText(body, 'plain', 'utf-8')
+            html_part = MIMEText(html_body, 'html', 'utf-8')
+            msg.attach(text_part)
+            msg.attach(html_part)
+            
+            # SMTP 서버 연결 및 발송
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+            
             self.logger.logger.info(f"✅ 이메일 발송 완료: {recipient}")
             return True
+            
         except Exception as e:
             self.logger.logger.error(f"❌ 이메일 발송 실패: {recipient} - {e}")
+            self.logger.logger.info(f"📧 이메일 시뮬레이션: {recipient}")
+            self.logger.logger.info(f"   제목: {subject}")
+            self.logger.logger.info(f"   본문: {body[:500]}...")
             return False
     
     def send_survey_emails(self, survey_link: str) -> str:
@@ -778,21 +1016,48 @@ class AdvancedRestaurantSystem:
             # CrewOutput을 문자열로 변환
             result_str = str(result)
             
-            # 실제 이메일 발송 (시뮬레이션)
-            self.logger.logger.info("\n📬 이메일 발송 시작:")
-            for recipient in self.email_recipients:
-                success = self._send_email_smtp(
-                    recipient=recipient,
-                    subject=f"[맛집 추천] 설문조사 참여 부탁드립니다",
-                    body=f"설문조사 링크: {extracted_link}\n\n{result_str[:200]}"
-                )
+            # 사용자에게 이메일 발송 확인
+            self.logger.logger.info("\n" + "="*80)
+            self.logger.logger.info("📧 이메일 발송 준비 완료")
+            self.logger.logger.info(f"   수신자: {', '.join(self.email_recipients)}")
+            self.logger.logger.info(f"   제목: [맛집 추천] 설문조사 참여 부탁드립니다")
+            self.logger.logger.info(f"   설문조사 링크: {extracted_link}")
+            self.logger.logger.info("="*80)
+            
+            # 사용자 확인
+            print("\n" + "="*80)
+            print("📧 이메일 발송 확인")
+            print(f"   수신자: {', '.join(self.email_recipients)}")
+            print(f"   제목: [맛집 추천] 설문조사 참여 부탁드립니다")
+            print(f"   설문조사 링크: {extracted_link}")
+            print("="*80)
+            
+            response = input("\n이메일을 발송하시겠습니까? (y/n): ").strip().lower()
+            
+            if response == 'y' or response == 'yes':
+                # 실제 이메일 발송
+                self.logger.logger.info("\n📬 이메일 발송 시작:")
+                print("\n📬 이메일 발송 중...")
                 
-                self.logger.log_email_sending(
-                    recipient=recipient,
-                    subject="맛집 추천 설문조사",
-                    template_used="survey_email",
-                    success=success
-                )
+                for recipient in self.email_recipients:
+                    success = self._send_email_smtp(
+                        recipient=recipient,
+                        subject=f"[맛집 추천] 설문조사 참여 부탁드립니다",
+                        body=f"설문조사 링크: {extracted_link}\n\n{result_str[:200]}",
+                        survey_link=extracted_link
+                    )
+                    
+                    self.logger.log_email_sending(
+                        recipient=recipient,
+                        subject="맛집 추천 설문조사",
+                        template_used="survey_email",
+                        success=success
+                    )
+                
+                print("✅ 이메일 발송 완료!")
+            else:
+                self.logger.logger.info("⚠️  사용자가 이메일 발송을 취소했습니다.")
+                print("\n⚠️  이메일 발송이 취소되었습니다.")
             
             execution_time = time.time() - start_time
             self.logger.log_task_response(task_id, result_str, {"execution_time": execution_time})
