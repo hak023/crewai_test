@@ -9,44 +9,166 @@
 
 ## 🔧 Google Forms API 설정
 
-### 1. Google Cloud Console 설정
+### ⚠️ 중요: Service Account vs OAuth 2.0 클라이언트 ID
 
-1. **Google Cloud Console 접속**
-   - https://console.cloud.google.com/ 에 접속합니다.
+현재 `config/google_credentials.json`이 **Service Account**인 경우, OAuth 2.0에는 사용할 수 없습니다.
 
-2. **새 프로젝트 생성**
-   - 좌측 상단의 프로젝트 선택 > "새 프로젝트" 클릭
-   - 프로젝트 이름: `restaurant-survey-system`
+**확인 방법:**
+```bash
+# google_credentials.json 파일을 열어서 확인
+# "type": "service_account" 라면 → 변경 필요 ❌
+# "installed" 또는 "web" 키가 있다면 → 정상 ✅
+```
 
-3. **Google Forms API 활성화**
-   ```
-   APIs & Services > Library > "Google Forms API" 검색 > 활성화
-   ```
+---
 
-4. **OAuth 2.0 클라이언트 ID 생성** (서비스 계정 대신)
-   ```
-   APIs & Services > Credentials > Create Credentials > OAuth client ID
-   ```
-   - 애플리케이션 유형: `Desktop app`
-   - 이름: `Restaurant Survey System`
+### 1. Google Cloud Console에서 OAuth 2.0 클라이언트 ID 생성
 
-5. **클라이언트 시크릿 다운로드**
-   - 생성된 OAuth 2.0 클라이언트 ID의 다운로드 버튼 클릭
-   - JSON 파일 다운로드
+#### 1-1. Google Cloud Console 접속
+https://console.cloud.google.com/apis/credentials
 
-6. **키 파일 저장**
-   ```bash
-   # 다운로드한 JSON 파일을 다음 경로로 복사하고 이름 변경
-   cp ~/Downloads/client_secret_*.json config/google_credentials.json
-   ```
+#### 1-2. 프로젝트 선택
+- 기존 프로젝트가 있다면 선택
+- 없다면 "새 프로젝트" 생성 (`restaurant-survey-system`)
 
-**중요**: OAuth 2.0 클라이언트 ID를 사용하면:
-- ✅ 첫 실행 시 웹 브라우저가 열리면서 Google 로그인 요청
-- ✅ 로그인 후 `token.json` 파일이 자동 생성됨
-- ✅ 이후 실행부터는 자동 인증 (재로그인 불필요)
-- ✅ 내 Google 계정으로 Forms가 생성됨
+#### 1-3. Google Forms API 활성화
+```
+좌측 메뉴: APIs & Services > Library
+검색: "Google Forms API"
+→ "사용 설정" 클릭
+```
 
-### 2. config.json 업데이트
+#### 1-4. OAuth 동의 화면 구성 (최초 1회)
+```
+APIs & Services > OAuth consent screen
+1. User Type: External 선택 → 만들기
+2. 앱 정보:
+   - 앱 이름: Restaurant Survey System
+   - 사용자 지원 이메일: (본인 이메일)
+   - 개발자 연락처 정보: (본인 이메일)
+3. 범위(Scopes): 기본값 그대로 (나중에 런타임에서 요청됨)
+4. 테스트 사용자: (선택사항) 본인 이메일 추가
+5. 저장 후 계속
+```
+
+#### 1-5. OAuth 2.0 클라이언트 ID 생성 ⭐ 핵심
+```
+APIs & Services > Credentials > + CREATE CREDENTIALS > OAuth client ID
+
+⚠️ 매우 중요: 애플리케이션 유형 선택
+┌─────────────────────────────────────┐
+│ Application type:                   │
+│ ○ Web application                   │
+│ ● Desktop app          ← 이것 선택! │
+│ ○ Android                           │
+│ ○ Chrome app                        │
+│ ○ iOS                               │
+│ ○ Universal Windows Platform (UWP) │
+└─────────────────────────────────────┘
+
+이름: Restaurant System Desktop Client
+→ "만들기" 클릭
+```
+
+#### 1-6. 클라이언트 시크릿 다운로드
+```
+✅ "OAuth 클라이언트가 생성되었습니다" 팝업이 나타남
+→ "JSON 다운로드" 클릭
+→ client_secret_XXXXX.apps.googleusercontent.com.json 파일 저장
+```
+
+#### 1-7. 다운로드한 파일을 프로젝트로 복사
+
+**Windows (PowerShell):**
+```powershell
+# 기존 Service Account 파일 백업 (선택사항)
+Move-Item config\google_credentials.json config\google_credentials_service_account.json
+
+# 새로 다운로드한 OAuth 클라이언트 ID 파일 복사
+Copy-Item "$env:USERPROFILE\Downloads\client_secret_*.json" config\google_credentials.json
+```
+
+**Linux/Mac:**
+```bash
+# 기존 Service Account 파일 백업 (선택사항)
+mv config/google_credentials.json config/google_credentials_service_account.json
+
+# 새로 다운로드한 OAuth 클라이언트 ID 파일 복사
+cp ~/Downloads/client_secret_*.json config/google_credentials.json
+```
+
+---
+
+### 2. 미리 토큰 생성하기 (추천 ⭐)
+
+OAuth 2.0 인증은 첫 실행 시 웹 브라우저를 통해 Google 로그인이 필요합니다.
+**미리 토큰을 생성해두면** main 시스템 실행 시 자동으로 인증됩니다.
+
+#### 2-1. 토큰 생성 스크립트 실행
+
+```powershell
+# 테스트 스크립트 실행
+python test_google_forms_oauth.py
+```
+
+#### 2-2. 웹 브라우저에서 인증
+
+스크립트 실행 시 자동으로 웹 브라우저가 열립니다:
+
+```
+1. Google 계정 선택 및 로그인
+2. "이 앱은 Google에서 확인하지 않았습니다" 경고 화면이 나타날 수 있음
+   → "고급" 클릭
+   → "Restaurant System(안전하지 않음)으로 이동" 클릭
+3. 권한 요청 화면:
+   "Google Forms를 보고, 수정하고, 만들고, 삭제"
+   → "허용" 클릭
+4. 인증 완료 메시지 확인
+```
+
+#### 2-3. 토큰 생성 확인
+
+```powershell
+# token.json 파일이 생성되었는지 확인
+dir config\token.json
+```
+
+**성공 시 출력:**
+```
+✅ OAuth 2.0 인증 완료!
+✅ 인증 정보 저장 완료: config\token.json
+   (다음부터는 이 파일을 사용하여 자동 인증됩니다)
+```
+
+---
+
+### 3. OAuth 2.0 인증 동작 방식
+
+#### 첫 실행 (token.json 없음):
+```
+1. 웹 브라우저 자동 실행
+2. Google 로그인
+3. 권한 승인
+4. token.json 자동 생성 ✅
+```
+
+#### 이후 실행 (token.json 있음):
+```
+1. token.json에서 자동 인증 ✅
+2. 브라우저 열리지 않음
+3. 바로 Forms API 사용 가능
+```
+
+#### 토큰 만료 시:
+```
+1. refresh_token으로 자동 갱신 ✅
+2. 갱신된 토큰을 token.json에 저장
+3. 사용자 개입 불필요
+```
+
+---
+
+### 5. config.json 업데이트
 
 `config/config.json` 파일에 Google credentials 경로를 추가합니다:
 
