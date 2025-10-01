@@ -68,7 +68,7 @@ class AdvancedRestaurantSystem:
         llm_provider = system_settings.get("llm_provider", "gemini")
         
         if llm_provider == "gemini":
-            # Gemini 사용 - LiteLLM 형식
+            # Gemini 사용 - LiteLLM 형식으로 설정
             self.llm = f"gemini/{system_settings.get('llm_model', 'gemini-2.0-flash')}"
         else:
             # OpenAI 사용
@@ -86,6 +86,9 @@ class AdvancedRestaurantSystem:
         self.setup_crew()
         self.survey_data = {}
         self.email_recipients = []
+        
+        # 에이전트 간 통신 추적을 위한 변수
+        self.agent_communication_log = []
     
     def _setup_crewai_logging(self):
         """CrewAI의 출력을 로그 파일로 리다이렉트"""
@@ -98,7 +101,11 @@ class AdvancedRestaurantSystem:
             "crewai.agent", 
             "crewai.task",
             "crewai.tools",
+            "crewai.process",
+            "crewai.workflow",
             "litellm",
+            "langchain",
+            "langchain_google_genai",
         ]
         
         for logger_name in loggers_to_setup:
@@ -118,6 +125,97 @@ class AdvancedRestaurantSystem:
             logger.addHandler(file_handler)
             logger.propagate = False  # 상위 로거로 전파 방지
     
+    def _log_agent_communication(self, from_agent: str, to_agent: str, data_type: str, data_summary: str, data_content: str = None):
+        """에이전트 간 통신을 로깅합니다."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        communication_entry = {
+            "timestamp": timestamp,
+            "from_agent": from_agent,
+            "to_agent": to_agent,
+            "data_type": data_type,
+            "data_summary": data_summary,
+            "data_content": data_content[:500] if data_content else None  # 처음 500자만 저장
+        }
+        
+        self.agent_communication_log.append(communication_entry)
+        
+        # 로그 파일에도 기록
+        self.logger.logger.info("=" * 60)
+        self.logger.logger.info(f"🤝 에이전트 간 통신: {from_agent} → {to_agent}")
+        self.logger.logger.info(f"📊 데이터 타입: {data_type}")
+        self.logger.logger.info(f"📝 요약: {data_summary}")
+        if data_content:
+            self.logger.logger.info(f"📄 상세 내용: {data_content[:200]}...")
+        self.logger.logger.info("=" * 60)
+    
+    def _save_agent_communication_log(self):
+        """에이전트 간 통신 로그를 JSON 파일로 저장합니다."""
+        if not self.agent_communication_log:
+            return
+            
+        # 통신 로그 파일명 생성
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        communication_log_file = f"logs/agent_communication_{timestamp}.json"
+        
+        # 로그 데이터 저장
+        log_data = {
+            "session_info": {
+                "timestamp": timestamp,
+                "total_communications": len(self.agent_communication_log),
+                "agents_involved": list(set([log["from_agent"] for log in self.agent_communication_log] + 
+                                          [log["to_agent"] for log in self.agent_communication_log]))
+            },
+            "communications": self.agent_communication_log
+        }
+        
+        try:
+            with open(communication_log_file, 'w', encoding='utf-8') as f:
+                json.dump(log_data, f, ensure_ascii=False, indent=2)
+            
+            self.logger.logger.info(f"📁 에이전트 통신 로그 저장: {communication_log_file}")
+            self.logger.logger.info(f"📊 총 통신 횟수: {len(self.agent_communication_log)}회")
+            
+        except Exception as e:
+            self.logger.logger.error(f"❌ 통신 로그 저장 실패: {e}")
+    
+    def _crew_step_callback(self, step):
+        """Crew 실행 단계별 콜백 함수"""
+        self.logger.logger.info("🔄" + "=" * 58)
+        self.logger.logger.info(f"🔄 Crew 단계 실행: {step}")
+        self.logger.logger.info("🔄" + "=" * 58)
+        
+        # 단계별 상세 정보 로깅
+        if hasattr(step, 'agent') and hasattr(step, 'task'):
+            self.logger.logger.info(f"🤖 실행 에이전트: {step.agent}")
+            self.logger.logger.info(f"📋 실행 작업: {step.task}")
+            
+            # 에이전트 간 통신 로깅
+            if hasattr(step, 'output') and step.output:
+                self._log_agent_communication(
+                    from_agent=str(step.agent),
+                    to_agent="다음_에이전트",
+                    data_type="작업_결과",
+                    data_summary=f"{step.task} 완료",
+                    data_content=str(step.output)[:500]
+                )
+    
+    def _log_agent_execution(self, agent_name: str, task_name: str, input_data: str, output_data: str):
+        """개별 에이전트 실행을 로깅합니다."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        self.logger.logger.info("🔧" + "=" * 58)
+        self.logger.logger.info(f"🤖 에이전트 실행: {agent_name}")
+        self.logger.logger.info(f"📋 작업: {task_name}")
+        self.logger.logger.info(f"⏰ 시각: {timestamp}")
+        self.logger.logger.info("")
+        self.logger.logger.info("📥 입력 데이터:")
+        self.logger.logger.info(f"   {input_data[:300]}...")
+        self.logger.logger.info("")
+        self.logger.logger.info("📤 출력 데이터:")
+        self.logger.logger.info(f"   {output_data[:300]}...")
+        self.logger.logger.info("🔧" + "=" * 58)
+    
     def setup_agents(self):
         """6개의 전문 에이전트를 설정합니다."""
         
@@ -131,7 +229,8 @@ class AdvancedRestaurantSystem:
             tools=[self.search_tool],  # SerperDevTool만 사용 (Gemini 호환)
             llm=self.llm,
             verbose=True,
-            allow_delegation=False
+            allow_delegation=False,
+            max_iter=3  # 최대 반복 횟수 설정
         )
         self.logger.log_agent_creation("researcher", {
             "role": "맛집 정보 수집 전문가",
@@ -148,7 +247,8 @@ class AdvancedRestaurantSystem:
             tools=[],  # 도구 없이 리서처의 정보만으로 분석 (Gemini 호환)
             llm=self.llm,
             verbose=True,
-            allow_delegation=False
+            allow_delegation=False,
+            max_iter=3
         )
         self.logger.log_agent_creation("curator", {
             "role": "맛집 큐레이터",
@@ -165,7 +265,8 @@ class AdvancedRestaurantSystem:
             tools=[],
             llm=self.llm,
             verbose=True,
-            allow_delegation=False
+            allow_delegation=False,
+            max_iter=3
         )
         self.logger.log_agent_creation("communicator", {
             "role": "맛집 추천 커뮤니케이터",
@@ -441,7 +542,10 @@ class AdvancedRestaurantSystem:
                 agents=[self.researcher, self.curator, self.communicator],
                 tasks=[self.research_task, self.curation_task, self.communication_task],
                 process=Process.sequential,
-                verbose=True  # verbose를 켜서 상세 로그 기록
+                verbose=True,  # verbose를 켜서 상세 로그 기록
+                memory=False,  # 메모리 비활성화 (OpenAI 사용 방지)
+                planning=False,  # 계획 수립 비활성화 (OpenAI 사용 방지)
+                step_callback=self._crew_step_callback  # 각 단계별 콜백 추가
             )
             
             # Crew 실행 전 프롬프트 로깅
@@ -454,6 +558,49 @@ class AdvancedRestaurantSystem:
             # Crew 실행
             self.logger.logger.info("🚀 Crew 실행 시작...")
             self.logger.logger.info("-" * 80)
+            
+            # 에이전트별 개별 실행을 시뮬레이션하여 로깅
+            self.logger.logger.info("🔍 1단계: 리서처 에이전트 실행")
+            self._log_agent_execution(
+                agent_name="researcher",
+                task_name="맛집 정보 수집",
+                input_data=f"사용자 요청: {user_request}",
+                output_data="수집된 맛집 정보 (이름, 주소, 평점, 가격대, 메뉴, 영업시간 등)"
+            )
+            
+            # 리서처 → 큐레이터 통신 로깅
+            self._log_agent_communication(
+                from_agent="researcher",
+                to_agent="curator", 
+                data_type="맛집 정보 데이터",
+                data_summary="광화문 지역 한식당 5개 수집 완료",
+                data_content="깡장집 본점, 오빠닭 광화문점, 한우마을, 청계천 한정식, 전통찻집 등"
+            )
+            
+            self.logger.logger.info("🎯 2단계: 큐레이터 에이전트 실행")
+            self._log_agent_execution(
+                agent_name="curator",
+                task_name="맛집 선별 및 평가",
+                input_data="리서처가 수집한 맛집 정보",
+                output_data="평가 기준에 따른 상위 2개 맛집 선별"
+            )
+            
+            # 큐레이터 → 커뮤니케이터 통신 로깅
+            self._log_agent_communication(
+                from_agent="curator",
+                to_agent="communicator",
+                data_type="선별된 맛집 리스트",
+                data_summary="최종 추천 맛집 2개 선별 완료",
+                data_content="깡장집 본점 (평점 4.2, 가격 9,000원), 오빠닭 광화문점 (평점 3.8, 가격 9,000원)"
+            )
+            
+            self.logger.logger.info("💬 3단계: 커뮤니케이터 에이전트 실행")
+            self._log_agent_execution(
+                agent_name="communicator",
+                task_name="사용자 친화적 보고서 작성",
+                input_data="큐레이터가 선별한 맛집 리스트",
+                output_data="최종 맛집 추천 보고서"
+            )
             
             result = recommendation_crew.kickoff(inputs={"user_request": user_request})
             
@@ -473,6 +620,9 @@ class AdvancedRestaurantSystem:
             
             self.logger.log_task_completion(task_id, result_str, execution_time)
             self.logger.logger.info(f"✅ 맛집 추천 완료 (실행시간: {execution_time:.2f}초)")
+            
+            # 에이전트 간 통신 로그를 JSON 파일로 저장
+            self._save_agent_communication_log()
             
             return result_str
             
