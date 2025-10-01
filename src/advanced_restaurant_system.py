@@ -27,6 +27,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # Google Forms API
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -761,51 +763,72 @@ class AdvancedRestaurantSystem:
             self.logger.logger.error(f"❌ 설문조사 생성 중 오류: {e}")
             return None
     
+    def _authenticate_google_forms(self) -> Credentials:
+        """Google Forms API를 위한 OAuth 2.0 인증을 수행합니다."""
+        SCOPES = ['https://www.googleapis.com/auth/forms.body']
+        creds = None
+        
+        # token.json 파일에 사용자 인증 정보가 저장됩니다
+        token_path = PROJECT_ROOT / "config" / "token.json"
+        
+        if token_path.exists():
+            creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+            self.logger.logger.info("✅ 기존 token.json에서 인증 정보 로드")
+        
+        # 인증 정보가 없거나 유효하지 않은 경우
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                self.logger.logger.info("🔄 토큰 갱신 중...")
+                creds.refresh(Request())
+                self.logger.logger.info("✅ 토큰 갱신 완료")
+            else:
+                # google_credentials.json 파일 경로
+                google_creds = config.config.get("google_credentials", {})
+                credentials_file = google_creds.get("credentials_file", "google_credentials.json")
+                
+                if not os.path.isabs(credentials_file):
+                    credentials_path = str(PROJECT_ROOT / "config" / credentials_file)
+                else:
+                    credentials_path = credentials_file
+                
+                if not os.path.exists(credentials_path):
+                    self.logger.logger.error(f"❌ Google credentials 파일을 찾을 수 없습니다: {credentials_path}")
+                    return None
+                
+                self.logger.logger.info("🔐 OAuth 2.0 인증을 시작합니다...")
+                self.logger.logger.info("   웹 브라우저가 열리면 Google 계정으로 로그인하세요.")
+                
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        credentials_path, SCOPES)
+                    creds = flow.run_local_server(port=0)
+                    self.logger.logger.info("✅ OAuth 2.0 인증 완료")
+                except Exception as auth_error:
+                    self.logger.logger.error(f"❌ OAuth 인증 실패: {auth_error}")
+                    return None
+            
+            # 인증 정보를 token.json에 저장
+            try:
+                with open(str(token_path), 'w') as token:
+                    token.write(creds.to_json())
+                self.logger.logger.info(f"✅ 인증 정보 저장: {token_path}")
+            except Exception as save_error:
+                self.logger.logger.warning(f"⚠️  token.json 저장 실패: {save_error}")
+        
+        return creds
+    
     def _create_google_form(self, restaurant_recommendations: str) -> str:
         """Google Forms API를 사용하여 실제 설문조사를 생성합니다."""
-        
-        # Google Forms API는 현재 제한적으로 접근 가능하므로
-        # Google Sheets를 사용한 대안 방법 사용
-        self.logger.logger.info("📝 Google Sheets를 사용하여 설문조사 응답 시트를 생성합니다...")
-        return self._create_google_form_alternative(restaurant_recommendations)
-        
-        # 아래는 Google Forms API 코드 (현재 500 에러 발생)
-        """
         try:
-            # Google 서비스 계정 인증
-            google_creds = config.config.get("google_credentials", {})
-            credentials_file = google_creds.get("credentials_file", "google_credentials.json")
+            # OAuth 2.0 인증
+            self.logger.logger.info("🔐 Google Forms API 인증 중...")
+            credentials = self._authenticate_google_forms()
             
-            # 상대 경로를 절대 경로로 변환
-            if not os.path.isabs(credentials_file):
-                credentials_path = str(PROJECT_ROOT / "config" / credentials_file)
-            else:
-                credentials_path = credentials_file
-            
-            if not os.path.exists(credentials_path):
-                self.logger.logger.warning(f"⚠️  Google credentials 파일을 찾을 수 없습니다: {credentials_path}")
-                self.logger.logger.info(f"   현재 경로: {os.getcwd()}")
-                self.logger.logger.info(f"   찾는 경로: {credentials_path}")
+            if not credentials:
+                self.logger.logger.error("❌ Google Forms API 인증 실패")
                 return None
             
-            self.logger.logger.info(f"✅ Google credentials 파일 발견: {credentials_path}")
-            
-            # Google Forms API에 필요한 모든 scope 포함
-            try:
-                credentials = service_account.Credentials.from_service_account_file(
-                    credentials_path,
-                    scopes=[
-                        'https://www.googleapis.com/auth/forms.body',
-                        'https://www.googleapis.com/auth/forms.responses.readonly',
-                        'https://www.googleapis.com/auth/drive',
-                        'https://www.googleapis.com/auth/drive.file'
-                    ]
-                )
-                self.logger.logger.info("✅ Google 서비스 계정 인증 성공")
-            except Exception as auth_error:
-                self.logger.logger.error(f"❌ Google 인증 실패: {auth_error}")
-                return None
-            
+            # Google Forms API 서비스 생성
             try:
                 service = build('forms', 'v1', credentials=credentials)
                 self.logger.logger.info("✅ Google Forms API 서비스 생성 성공")
@@ -978,20 +1001,20 @@ class AdvancedRestaurantSystem:
             google_form_url = self._create_google_form(recommendations_str)
             
             if google_form_url:
-                # Google Sheets가 성공적으로 생성된 경우
-                result_str = f"""설문조사 응답 시트: {google_form_url}
+                # Google Form이 성공적으로 생성된 경우
+                result_str = f"""설문조사 링크: {google_form_url}
 
 설문조사 항목:
-1. 추천된 맛집 중 가장 선호하는 곳
+1. 추천된 맛집 중 가장 마음에 드는 곳은? (객관식)
 2. 각 맛집의 추천 만족도 (1-5점)
 3. 가격 적정성 평가 (1-5점)
 4. 추가 의견 (주관식)
 
-✅ Google Sheets를 사용하여 실제 설문조사 응답 시트가 생성되었습니다!
-📊 응답 수집 시트: {google_form_url}
+✅ Google Forms API를 사용하여 실제 설문조사가 생성되었습니다!
+📋 응답 수집 링크: {google_form_url}
 
-💡 이 시트는 누구나 편집 가능하도록 설정되어 있습니다.
-   응답자들이 직접 시트에 데이터를 입력할 수 있습니다.
+💡 이 설문지는 OAuth 2.0 인증을 통해 귀하의 Google 계정으로 생성되었습니다.
+   Google Forms에서 응답을 실시간으로 확인할 수 있습니다.
 """
                 execution_time = time.time() - start_time
                 self.logger.log_task_response(task_id, result_str, {"execution_time": execution_time})

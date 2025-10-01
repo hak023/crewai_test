@@ -23,23 +23,28 @@
    APIs & Services > Library > "Google Forms API" 검색 > 활성화
    ```
 
-4. **서비스 계정 생성**
+4. **OAuth 2.0 클라이언트 ID 생성** (서비스 계정 대신)
    ```
-   APIs & Services > Credentials > Create Credentials > Service Account
+   APIs & Services > Credentials > Create Credentials > OAuth client ID
    ```
-   - 서비스 계정 이름: `restaurant-forms-service`
-   - 역할: `Editor` 또는 `Owner`
+   - 애플리케이션 유형: `Desktop app`
+   - 이름: `Restaurant Survey System`
 
-5. **서비스 계정 키 생성**
-   - 생성된 서비스 계정 클릭
-   - Keys 탭 > Add Key > Create New Key
-   - JSON 형식 선택 > 다운로드
+5. **클라이언트 시크릿 다운로드**
+   - 생성된 OAuth 2.0 클라이언트 ID의 다운로드 버튼 클릭
+   - JSON 파일 다운로드
 
 6. **키 파일 저장**
    ```bash
-   # 다운로드한 JSON 파일을 다음 경로로 복사
-   cp ~/Downloads/restaurant-survey-system-*.json config/google_credentials.json
+   # 다운로드한 JSON 파일을 다음 경로로 복사하고 이름 변경
+   cp ~/Downloads/client_secret_*.json config/google_credentials.json
    ```
+
+**중요**: OAuth 2.0 클라이언트 ID를 사용하면:
+- ✅ 첫 실행 시 웹 브라우저가 열리면서 Google 로그인 요청
+- ✅ 로그인 후 `token.json` 파일이 자동 생성됨
+- ✅ 이후 실행부터는 자동 인증 (재로그인 불필요)
+- ✅ 내 Google 계정으로 Forms가 생성됨
 
 ### 2. config.json 업데이트
 
