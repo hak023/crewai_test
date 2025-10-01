@@ -837,14 +837,76 @@ class AdvancedRestaurantSystem:
                 self.logger.logger.error(f"❌ Google Forms API 서비스 생성 실패: {service_error}")
                 return None
             
-            # 맛집 목록 파싱
+            # 맛집 목록 파싱 (상세 정보 포함)
             restaurants = []
-            for line in restaurant_recommendations.split('\n'):
-                if line.strip().startswith('**[') and '위]':
+            current_restaurant = None
+            
+            lines = restaurant_recommendations.split('\n')
+            for i, line in enumerate(lines):
+                line = line.strip()
+                
+                # 맛집 제목 파싱: **[1위] 맛집 이름**
+                if line.startswith('**[') and '위]' in line:
+                    if current_restaurant:
+                        restaurants.append(current_restaurant)
+                    
                     # 맛집 이름 추출
-                    match = re.search(r'\*\*\[.*?\]\s*(.*?)\*\*', line)
+                    match = re.search(r'\*\*\[(\d+)위\]\s*(.*?)\*\*', line)
                     if match:
-                        restaurants.append(match.group(1).strip())
+                        rank = match.group(1)
+                        name = match.group(2).strip()
+                        current_restaurant = {
+                            'rank': rank,
+                            'name': name,
+                            'address': '',
+                            'phone': '',
+                            'rating': '',
+                            'price': '',
+                            'reason': '',
+                            'menu': '',
+                            'hours': '',
+                            'url': '',
+                            'category': '',
+                            'distance': ''
+                        }
+                
+                # 상세 정보 파싱
+                elif current_restaurant:
+                    if '📍 주소:' in line or '📍 위치:' in line:
+                        current_restaurant['address'] = line.split(':', 1)[1].strip() if ':' in line else ''
+                    elif '📞 전화:' in line or '☎️' in line:
+                        current_restaurant['phone'] = line.split(':', 1)[1].strip() if ':' in line else ''
+                    elif '⭐ 평점:' in line or '평점:' in line:
+                        current_restaurant['rating'] = line.split(':', 1)[1].strip() if ':' in line else ''
+                    elif '💰 가격대:' in line or '가격대:' in line:
+                        current_restaurant['price'] = line.split(':', 1)[1].strip() if ':' in line else ''
+                    elif '💡 추천 이유:' in line or '추천 이유:' in line:
+                        current_restaurant['reason'] = line.split(':', 1)[1].strip() if ':' in line else ''
+                    elif '🍽️ 메뉴:' in line or '대표 메뉴:' in line:
+                        current_restaurant['menu'] = line.split(':', 1)[1].strip() if ':' in line else ''
+                    elif '🕐 영업시간:' in line or '영업시간:' in line:
+                        current_restaurant['hours'] = line.split(':', 1)[1].strip() if ':' in line else ''
+                    elif '🔗 URL:' in line or '링크:' in line or 'URL:' in line:
+                        url_text = line.split(':', 1)[1].strip() if ':' in line else ''
+                        # URL 추출 (마크다운 링크 형식 또는 일반 URL)
+                        url_match = re.search(r'https?://[^\s\)]+', url_text)
+                        if url_match:
+                            current_restaurant['url'] = url_match.group(0)
+                    elif '🏷️ 카테고리:' in line or '분류:' in line or '음식 종류:' in line:
+                        current_restaurant['category'] = line.split(':', 1)[1].strip() if ':' in line else ''
+                    elif '📏 거리:' in line or '거리:' in line:
+                        current_restaurant['distance'] = line.split(':', 1)[1].strip() if ':' in line else ''
+            
+            # 마지막 맛집 추가
+            if current_restaurant:
+                restaurants.append(current_restaurant)
+            
+            # 파싱 결과 로깅
+            self.logger.logger.info(f"📊 파싱된 맛집 정보: {len(restaurants)}개")
+            for r in restaurants:
+                self.logger.logger.info(f"   {r['rank']}위: {r['name']}")
+                if r['reason']:
+                    self.logger.logger.info(f"        추천 이유: {r['reason'][:50]}...")
             
             # Google Form 생성
             form = {
@@ -864,77 +926,90 @@ class AdvancedRestaurantSystem:
                 self.logger.logger.error(f"❌ Google Form 생성 실패: {create_error}")
                 return None
             
-            # 질문 추가
+            # 질문 추가 (2개만)
             questions = []
+            question_index = 0
             
-            # 1. 객관식 - 가장 마음에 드는 맛집
+            # 1. 객관식 - 가장 마음에 드는 맛집 (상세 정보 포함)
             if restaurants:
+                # 선택지 구성 (간단하게)
+                choice_options = []
+                for r in restaurants:
+                    choice_label = f"[{r['rank']}위] {r['name']}"
+                    choice_options.append({"value": choice_label})
+                
+                # 질문 설명에 전체 상세 정보 추가
+                description = "AI 에이전트가 분석한 맛집 추천 결과입니다.\n"
+                description += f"총 {len(restaurants)}개의 맛집을 추천드립니다.\n\n"
+                description += "=" * 50 + "\n\n"
+                
+                for r in restaurants:
+                    description += f"【 {r['rank']}위 】 {r['name']}\n"
+                    description += "-" * 40 + "\n"
+                    
+                    # 기본 정보
+                    if r['category']:
+                        description += f"🏷️  카테고리: {r['category']}\n"
+                    if r['address']:
+                        description += f"📍 주소: {r['address']}\n"
+                    if r['distance']:
+                        description += f"📏 거리: {r['distance']}\n"
+                    if r['phone']:
+                        description += f"📞 전화: {r['phone']}\n"
+                    if r['hours']:
+                        description += f"🕐 영업시간: {r['hours']}\n"
+                    
+                    # 평가 정보
+                    if r['rating']:
+                        description += f"⭐ 평점: {r['rating']}\n"
+                    if r['price']:
+                        description += f"💰 가격대: {r['price']}\n"
+                    if r['menu']:
+                        description += f"🍽️  대표메뉴: {r['menu']}\n"
+                    
+                    # AI 분석
+                    if r['reason']:
+                        description += f"\n💡 AI 추천 이유:\n{r['reason']}\n"
+                    
+                    # 정보 출처 URL
+                    if r['url']:
+                        description += f"\n🔗 상세정보: {r['url']}\n"
+                    
+                    description += "\n" + "=" * 50 + "\n\n"
+                
                 questions.append({
                     "createItem": {
                         "item": {
                             "title": "추천된 맛집 중 가장 마음에 드는 곳은?",
+                            "description": description,
                             "questionItem": {
                                 "question": {
                                     "required": True,
                                     "choiceQuestion": {
                                         "type": "RADIO",
-                                        "options": [{"value": r} for r in restaurants]
+                                        "options": choice_options
                                     }
                                 }
                             }
                         },
-                        "location": {"index": 0}
+                        "location": {"index": question_index}
                     }
                 })
+                question_index += 1
             
-            # 2-4. 각 맛집별 만족도 (1-5점)
-            for idx, restaurant in enumerate(restaurants):
-                questions.append({
-                    "createItem": {
-                        "item": {
-                            "title": f"{restaurant} - 추천 만족도",
-                            "questionItem": {
-                                "question": {
-                                    "required": True,
-                                    "scaleQuestion": {
-                                        "low": 1,
-                                        "high": 5,
-                                        "lowLabel": "매우 불만족",
-                                        "highLabel": "매우 만족"
-                                    }
-                                }
-                            }
-                        },
-                        "location": {"index": idx + 1}
-                    }
-                })
-            
-            # 5. 가격 적정성 평가
-            questions.append({
-                "createItem": {
-                    "item": {
-                        "title": "전반적인 가격 적정성 평가",
-                        "questionItem": {
-                            "question": {
-                                "required": True,
-                                "scaleQuestion": {
-                                    "low": 1,
-                                    "high": 5,
-                                    "lowLabel": "매우 비쌈",
-                                    "highLabel": "매우 저렴"
-                                }
-                            }
-                        }
-                    },
-                    "location": {"index": len(restaurants) + 1}
-                }
-            })
-            
-            # 6. 추가 의견
+            # 2. 추가 의견 (자유 텍스트)
             questions.append({
                 "createItem": {
                     "item": {
                         "title": "추가 의견이나 개선사항을 자유롭게 적어주세요",
+                        "description": (
+                            "AI 에이전트의 맛집 추천 서비스에 대한 솔직한 의견을 남겨주세요.\n\n"
+                            "• 추천이 마음에 드셨나요?\n"
+                            "• 어떤 점이 좋았나요?\n"
+                            "• 개선이 필요한 부분은 무엇인가요?\n"
+                            "• 추가로 원하는 정보가 있나요?\n\n"
+                            "좋았던 점, 아쉬운 점, 개선 제안 등 무엇이든 환영합니다!"
+                        ),
                         "questionItem": {
                             "question": {
                                 "required": False,
@@ -944,9 +1019,10 @@ class AdvancedRestaurantSystem:
                             }
                         }
                     },
-                    "location": {"index": len(restaurants) + 2}
+                    "location": {"index": question_index}
                 }
             })
+            question_index += 1
             
             # 질문들을 폼에 추가
             if questions:

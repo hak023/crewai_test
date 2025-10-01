@@ -30,6 +30,7 @@ ENV/
 # 설정 파일 (개인 정보 포함)
 config/config.json
 config/google_credentials.json
+config/google_credentials_service_account.json
 config/token.json
 .env
 
